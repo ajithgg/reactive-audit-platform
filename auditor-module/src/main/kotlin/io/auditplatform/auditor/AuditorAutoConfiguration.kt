@@ -35,8 +35,8 @@ class AuditorAutoConfiguration {
     fun webClientBuilder(): WebClient.Builder = WebClient.builder()
 
     @Bean
-    @ConditionalOnMissingBean(AuditPublisher::class)
-    fun auditPublisher(properties: AuditorProperties, builder: WebClient.Builder): AuditPublisher =
+    @ConditionalOnProperty(prefix = "auditor", name = ["publisher"], havingValue = "http", matchIfMissing = true)
+    fun httpAuditPublisher(properties: AuditorProperties, builder: WebClient.Builder): AuditPublisher =
         HttpAuditPublisher(builder.baseUrl(properties.endpoint).build(), properties)
 
     @Bean

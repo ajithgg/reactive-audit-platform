@@ -21,6 +21,7 @@ management:
 
 auditor:
   enabled: true
+  audit-reads: false
   endpoint: http://localhost:8083
   service-name: user-platform
   environment: local

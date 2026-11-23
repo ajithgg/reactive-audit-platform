@@ -1,0 +1,20 @@
+# Production-style audit path: transactional outbox → Kafka → audit-platform
+auditor:
+  publisher: outbox
+  outbox:
+    relay:
+      enabled: true
+      batch-size: 50
+      fixed-delay-ms: 2000
+      max-attempts: 10
+  kafka:
+    topic: audit-events
+
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true

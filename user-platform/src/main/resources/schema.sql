@@ -14,3 +14,17 @@ CREATE TABLE IF NOT EXISTS user_record (
 
 CREATE INDEX IF NOT EXISTS idx_user_record_tenant ON user_record (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_user_record_tenant_email ON user_record (tenant_id, email);
+
+CREATE TABLE IF NOT EXISTS audit_outbox (
+    id UUID PRIMARY KEY,
+    event_id VARCHAR(64) NOT NULL UNIQUE,
+    tenant_id VARCHAR(100) NOT NULL,
+    payload_json TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    created_at TIMESTAMPTZ NOT NULL,
+    sent_at TIMESTAMPTZ,
+    attempts INT NOT NULL DEFAULT 0,
+    last_error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_outbox_pending ON audit_outbox (status, created_at);

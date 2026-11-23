@@ -4,8 +4,9 @@ import tools.jackson.core.type.TypeReference
 import tools.jackson.databind.ObjectMapper
 import io.auditplatform.auditor.Auditor
 import org.springframework.stereotype.Service
-import reactor.core.publisher.Flux
+import org.springframework.transaction.reactive.TransactionalOperator
 import reactor.core.publisher.Mono
+import reactor.core.scheduler.Schedulers
 import java.time.Instant
 import java.util.UUID
 
@@ -13,63 +14,53 @@ import java.util.UUID
 class UserService(
     private val repository: UserRecordRepository,
     private val objectMapper: ObjectMapper,
-    private val auditor: Auditor
+    private val auditor: Auditor,
+    private val transactionalOperator: TransactionalOperator
 ) {
 
-    fun create(tenantId: String, request: CreateUserRequest): Mono<UserResponse> {
-        return repository.existsByTenantIdAndExternalId(tenantId, request.externalId)
+    fun create(tenantId: String, request: CreateUserRequest): Mono<UserResponse> =
+        repository.existsByTenantIdAndExternalId(tenantId, request.externalId)
             .flatMap { exists ->
                 if (exists) return@flatMap Mono.error<UserRecord>(UserAlreadyExistsException(request.externalId))
 
                 val now = Instant.now()
-                repository.save(
-                    UserRecord(
-                        id = UUID.randomUUID(),
-                        tenantId = tenantId,
-                        externalId = request.externalId,
-                        email = request.email,
-                        displayName = request.displayName,
-                        status = request.status,
-                        attributesJson = objectMapper.writeValueAsString(request.attributes),
-                        version = null,
-                        createdAt = now,
-                        updatedAt = now
+                transactionalOperator.transactional(
+                    repository.save(
+                        UserRecord(
+                            id = UUID.randomUUID(),
+                            tenantId = tenantId,
+                            externalId = request.externalId,
+                            email = request.email,
+                            displayName = request.displayName,
+                            status = request.status,
+                            attributesJson = objectMapper.writeValueAsString(request.attributes),
+                            version = null,
+                            createdAt = now,
+                            updatedAt = now
+                        )
                     )
                 )
             }
             .flatMap { saved ->
-                val response = toResponse(saved)
-                auditor.recordCreate(
-                    entityType = ENTITY_TYPE,
-                    entityId = saved.id.toString(),
-                    after = toAuditSnapshot(saved),
-                    tenantId = tenantId
-                ).thenReturn(response)
+                Mono.defer {
+                    auditor.recordCreate(
+                        entityType = ENTITY_TYPE,
+                        entityId = saved.id.toString(),
+                        after = toAuditSnapshot(saved),
+                        tenantId = tenantId
+                    )
+                }
+                    .publishOn(Schedulers.boundedElastic())
+                    .thenReturn(toResponse(saved))
             }
-    }
 
     fun get(tenantId: String, id: UUID): Mono<UserResponse> =
-        findRequired(tenantId, id)
-            .flatMap { record ->
-                auditor.recordRead(
-                    entityType = ENTITY_TYPE,
-                    entityId = id.toString(),
-                    tenantId = tenantId
-                ).thenReturn(toResponse(record))
-            }
+        findRequired(tenantId, id).map(::toResponse)
 
     fun list(tenantId: String): Mono<List<UserResponse>> =
         repository.findAllByTenantIdOrderByCreatedAtDesc(tenantId)
             .map(::toResponse)
             .collectList()
-            .flatMap { users ->
-                auditor.recordRead(
-                    entityType = ENTITY_TYPE,
-                    entityId = "*",
-                    tenantId = tenantId,
-                    metadata = mapOf("resultCount" to users.size.toString())
-                ).thenReturn(users)
-            }
 
     fun update(tenantId: String, id: UUID, request: UpdateUserRequest): Mono<UserResponse> =
         findRequired(tenantId, id)
@@ -82,30 +73,36 @@ class UserService(
                     updatedAt = Instant.now()
                 )
 
-                repository.save(updated)
+                transactionalOperator.transactional(repository.save(updated))
                     .flatMap { saved ->
-                        auditor.recordUpdate(
-                            entityType = ENTITY_TYPE,
-                            entityId = id.toString(),
-                            before = toAuditSnapshot(before),
-                            after = toAuditSnapshot(saved),
-                            tenantId = tenantId
-                        ).thenReturn(toResponse(saved))
+                        Mono.defer {
+                            auditor.recordUpdate(
+                                entityType = ENTITY_TYPE,
+                                entityId = id.toString(),
+                                before = toAuditSnapshot(before),
+                                after = toAuditSnapshot(saved),
+                                tenantId = tenantId
+                            )
+                        }
+                            .publishOn(Schedulers.boundedElastic())
+                            .thenReturn(toResponse(saved))
                     }
             }
 
     fun delete(tenantId: String, id: UUID): Mono<Void> =
         findRequired(tenantId, id)
             .flatMap { before ->
-                repository.delete(before)
-                    .then(
-                        auditor.recordDelete(
-                            entityType = ENTITY_TYPE,
-                            entityId = id.toString(),
-                            before = toAuditSnapshot(before),
-                            tenantId = tenantId
-                        )
-                    )
+                transactionalOperator.transactional(repository.delete(before).then(Mono.just(before)))
+                    .flatMap {
+                        Mono.defer {
+                            auditor.recordDelete(
+                                entityType = ENTITY_TYPE,
+                                entityId = id.toString(),
+                                before = toAuditSnapshot(before),
+                                tenantId = tenantId
+                            )
+                        }.publishOn(Schedulers.boundedElastic())
+                    }
             }
             .then()
 

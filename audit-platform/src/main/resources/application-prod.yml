@@ -1,0 +1,15 @@
+audit:
+  kafka:
+    topic: audit-events
+    consumer:
+      enabled: true
+      group-id: audit-platform
+  ingestion:
+    api-key: ${AUDIT_INGEST_API_KEY:dev-ingest-key}
+
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: true

@@ -16,6 +16,9 @@ class HttpAuditPublisher(
     override fun publish(event: AuditEvent): Mono<AuditReceipt> {
         return webClient.post()
             .uri("/api/v1/audit-events")
+            .headers { headers ->
+                properties.ingestApiKey?.let { headers.set("X-Audit-Ingest-Key", it) }
+            }
             .bodyValue(event)
             .retrieve()
             .bodyToMono(AuditReceipt::class.java)

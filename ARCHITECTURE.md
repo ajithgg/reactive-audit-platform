@@ -39,16 +39,21 @@ The SDK adds tenant, actor, request, source-service and timestamp information.
 
 ## ADR-005: Publisher is replaceable
 
-V1 contains `HttpAuditPublisher` for easy local development. `Auditor` depends only on the `AuditPublisher` interface.
+`Auditor` depends only on the `AuditPublisher` interface.
 
-For production-grade completeness, add a transactional outbox adapter. The event contract and business calls stay unchanged.
+| Implementation | Module | When |
+|----------------|--------|------|
+| `HttpAuditPublisher` | auditor-module | `auditor.publisher=http` (default) |
+| `R2dbcOutboxAuditPublisher` | auditor-outbox-r2dbc | `auditor.publisher=outbox` + prod profile |
+
+Outbox rows are relayed from user-platform to Kafka; audit-platform consumes the topic and writes Elasticsearch. See [PRODUCTION.md](PRODUCTION.md).
 
 ## Audit semantics
 
 | Operation | Before | After | changesBefore / changesAfter |
 |---|---|---|---|
 | CREATE | null | full created object | empty (full object is in `after`) |
-| READ | null | null | empty; access metadata only |
+| READ | not audited by default (`auditor.audit-reads=false`) | — | — |
 | UPDATE | full previous object | full resulting object | only changed fields as key/value maps |
 | DELETE | full object at deletion time | null | empty (full object is in `before`) |
 

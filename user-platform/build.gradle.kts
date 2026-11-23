@@ -13,6 +13,8 @@ java {
 
 dependencies {
     implementation(project(":auditor-module"))
+    implementation(project(":auditor-outbox-r2dbc"))
+    implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation("org.springframework.boot:spring-boot-starter-webflux")
     implementation("org.springframework.boot:spring-boot-starter-data-r2dbc")
     implementation("org.springframework.boot:spring-boot-starter-validation")

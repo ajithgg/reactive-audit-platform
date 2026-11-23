@@ -63,15 +63,20 @@ class Auditor(
         entityId: String,
         tenantId: String? = null,
         metadata: Map<String, String> = emptyMap()
-    ): Mono<AuditReceipt> = record(
-        operation = AuditOperation.READ,
-        entityType = entityType,
-        entityId = entityId,
-        before = null,
-        after = null,
-        tenantId = tenantId,
-        metadata = metadata
-    )
+    ): Mono<AuditReceipt> {
+        if (!properties.auditReads) {
+            return Mono.empty()
+        }
+        return record(
+            operation = AuditOperation.READ,
+            entityType = entityType,
+            entityId = entityId,
+            before = null,
+            after = null,
+            tenantId = tenantId,
+            metadata = metadata
+        )
+    }
 
     fun record(
         operation: AuditOperation,

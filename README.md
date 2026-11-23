@@ -5,6 +5,7 @@ A reusable, tenant-aware CRUD audit platform built with Spring Boot, Kotlin, Web
 ## Modules
 
 - `auditor-module` — reusable audit SDK. Builds generic audit events, computes before/after diffs, redacts configured fields, extracts request/tenant/actor context, and publishes through a pluggable reactive `AuditPublisher`.
+- `auditor-outbox-r2dbc` — `R2dbcOutboxAuditPublisher` for transactional outbox writes (`auditor.publisher=outbox`).
 - `audit-platform` — central ingestion/search service. Persists audit events to Elasticsearch.
 - `user-platform` — sample platform service that persists tenant-scoped users in PostgreSQL using R2DBC and audits CRUD operations with `auditor-module`.
 - `user-tenant` — sample tenant-facing facade. Forwards tenant/user/correlation context to `user-platform` using WebClient.
@@ -136,7 +137,7 @@ Every mutation can contain:
 
 - event/schema version
 - tenant
-- operation: CREATE / READ / UPDATE / DELETE
+- operation: CREATE / UPDATE / DELETE (reads optional via `auditor.audit-reads`)
 - entity type and id
 - actor
 - source service/environment
@@ -148,25 +149,23 @@ Every mutation can contain:
 
 The audit module is intentionally unaware of `UserRecord`. Any serializable object can be audited.
 
-## Important production reliability note
+## Production audit path (outbox + Kafka)
 
-This starter uses the HTTP `AuditPublisher` to keep local development simple. That is not yet an atomic guarantee between a business DB commit and audit persistence.
-
-The production evolution should add a `auditor-outbox-r2dbc` or Kafka/outbox publisher implementation:
+Local default remains **HTTP** (`auditor.publisher=http`). For the **transactional outbox** flow, see **[PRODUCTION.md](PRODUCTION.md)**:
 
 ```text
-business transaction
-  |- update business row
-  `- insert audit outbox row
+@Transactional mutation
+  |- business row (PostgreSQL)
+  `- audit_outbox row (same commit)
           |
           v
-      CDC / relay
+     outbox relay (user-platform)
           |
           v
-        Kafka
+        Kafka (audit-events)
           |
           v
-    audit-platform -> Elasticsearch + immutable archive
+     audit-platform -> Elasticsearch
 ```
 
-The business services do not need to change their `Auditor` calls when the publisher is swapped.
+Business services keep the same `Auditor` calls; switch publisher via config.
